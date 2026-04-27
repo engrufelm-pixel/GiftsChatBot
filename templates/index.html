@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI-консультант gifts.ru</title>
+
+<style>
+body {
+    margin:0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+:root {
+    --brand: #a6ce39;
+    --brand-dark: #8fba2e;
+    --bg-light: #f7f8fa;
+}
+
+#chat-button {
+    position: fixed;
+    bottom: 25px;
+    right: 25px;
+    width: 64px;
+    height: 64px;
+    background: var(--brand);
+    border-radius: 50%;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    cursor:pointer;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+    transition: 0.3s;
+    z-index:1000;
+}
+
+#chat-button:hover {
+    transform: scale(1.08);
+    background: var(--brand-dark);
+}
+
+#chat-window {
+    position: fixed;
+    bottom: 100px;
+    right: 25px;
+    width: 400px;
+    height: 600px;
+    background: white;
+    border-radius: 20px;
+    box-shadow: 0 25px 60px rgba(0,0,0,0.3);
+    display:none;
+    flex-direction: column;
+    overflow: hidden;
+    animation: slideUp 0.25s ease;
+    z-index:1000;
+}
+
+@keyframes slideUp {
+    from {opacity:0; transform:translateY(15px);}
+    to {opacity:1; transform:translateY(0);}
+}
+
+#chat-header {
+    background: var(--brand);
+    padding: 16px 18px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+}
+
+.header-left {
+    display:flex;
+    flex-direction:column;
+}
+
+.header-title {
+    font-weight:600;
+    font-size:15px;
+}
+
+.status {
+    font-size:12px;
+    display:flex;
+    align-items:center;
+    gap:6px;
+    opacity:0.8;
+}
+
+.status-dot {
+    width:8px;
+    height:8px;
+    background:#2ecc71;
+    border-radius:50%;
+    position:relative;
+}
+
+.status-dot::after {
+    content:"";
+    position:absolute;
+    width:8px;
+    height:8px;
+    border-radius:50%;
+    background:#2ecc71;
+    animation:pulse 1.5s infinite;
+    opacity:0.6;
+}
+
+@keyframes pulse {
+    0% {transform:scale(1); opacity:0.6;}
+    70% {transform:scale(2.5); opacity:0;}
+    100% {opacity:0;}
+}
+
+#chat-messages {
+    flex:1;
+    padding:20px;
+    overflow-y:auto;
+    background: var(--bg-light);
+    display:flex;
+    flex-direction:column;
+    gap:12px;
+    scroll-behavior: smooth;
+}
+
+.message {
+    padding:12px 16px;
+    border-radius:16px;
+    max-width:80%;
+    font-size:14px;
+    line-height:1.5;
+    white-space:pre-line;
+}
+
+.user {
+    align-self:flex-end;
+    background: var(--brand);
+}
+
+.bot {
+    align-self:flex-start;
+    background:white;
+    box-shadow: 0 3px 10px rgba(0,0,0,0.08);
+}
+
+.typing-indicator {
+    font-style: italic;
+    opacity:0.6;
+}
+
+#chat-input-area {
+    display:flex;
+    border-top:1px solid #eee;
+    background:white;
+}
+
+#chat-input {
+    flex:1;
+    padding:16px;
+    border:none;
+    outline:none;
+    font-size:14px;
+}
+
+#send-btn {
+    background: var(--brand);
+    border:none;
+    padding:0 22px;
+    cursor:pointer;
+    font-size:16px;
+    transition:0.2s;
+}
+
+#send-btn:hover {
+    background: var(--brand-dark);
+}
+</style>
+</head>
+<body>
+
+<div id="chat-button" onclick="toggleChat()">🎁</div>
+
+<div id="chat-window">
+    <div id="chat-header">
+        <div class="header-left">
+            <div class="header-title">Консультант gifts.ru</div>
+            <div class="status">
+                <div class="status-dot"></div>
+                Онлайн
+            </div>
+        </div>
+        <span style="cursor:pointer;" onclick="toggleChat()">✕</span>
+    </div>
+
+    <div id="chat-messages">
+        <div class="message bot">Здравствуйте! Напишите бюджет и кому нужен подарок 🎁</div>
+    </div>
+
+    <div id="chat-input-area">
+        <input type="text" id="chat-input"
+        placeholder="Например: подборка для топ-менеджеров до 5000"
+        onkeypress="if(event.key==='Enter') sendMessage()">
+        <button id="send-btn" onclick="sendMessage()">➤</button>
+    </div>
+</div>
+
+<script>
+function toggleChat(){
+    const win=document.getElementById("chat-window");
+    win.style.display = win.style.display==="flex" ? "none" : "flex";
+}
+
+function scrollToBottom(){
+    const messages = document.getElementById("chat-messages");
+    messages.scrollTop = messages.scrollHeight;
+}
+
+function typeWriter(element, text, speed = 12) {
+    let i = 0;
+    element.textContent = "";
+    function typing() {
+        if (i < text.length) {
+            element.textContent += text.charAt(i);
+            i++;
+            scrollToBottom();
+            setTimeout(typing, speed);
+        }
+    }
+    typing();
+}
+
+async function sendMessage(){
+    const input=document.getElementById("chat-input");
+    const messages=document.getElementById("chat-messages");
+    const text=input.value.trim();
+    if(!text) return;
+
+    messages.innerHTML += `<div class="message user">${text}</div>`;
+    input.value="";
+    scrollToBottom();
+
+    messages.innerHTML += `<div class="message bot typing-indicator" id="typing">Печатаю ответ...</div>`;
+    scrollToBottom();
+
+    const response=await fetch("/chat",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({message:text})
+    });
+
+    const data=await response.json();
+
+    document.getElementById("typing").remove();
+
+    const botMessage = document.createElement("div");
+    botMessage.className = "message bot";
+    messages.appendChild(botMessage);
+
+    typeWriter(botMessage, data.reply, 10);
+}
+</script>
+
+</body>
+</html>
