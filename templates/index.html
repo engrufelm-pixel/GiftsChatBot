@@ -171,60 +171,51 @@ function scrollToBottom(){
 function typeText(element, text, speed, callback) {
     let i = 0;
     element.innerHTML = '<span class="cursor-blink"></span>';
-    
+
     function type() {
         if (i < text.length) {
             let char = text.charAt(i);
-            
-            // Убираем курсор, добавляем символ, возвращаем курсор
             let cursor = element.querySelector('.cursor-blink');
             if (cursor) cursor.remove();
-            
-            // Если встречаем \n — делаем перенос строки
+
             if (char === '\n') {
                 element.innerHTML += '<br>';
             } else {
                 element.innerHTML += char;
             }
-            
-            // Добавляем мигающий курсор обратно
+
             element.innerHTML += '<span class="cursor-blink"></span>';
-            
             i++;
             scrollToBottom();
-            
-            // Скорость: после точки или переноса строки — пауза побольше
+
             let delay = speed;
             if (char === '.' || char === '!' || char === '?') delay = speed * 4;
             if (char === '\n') delay = speed * 3;
             if (char === ',') delay = speed * 2;
-            
+
             setTimeout(type, delay);
         } else {
-            // Убираем курсор в конце
             let cursor = element.querySelector('.cursor-blink');
             if (cursor) cursor.remove();
             if (callback) callback();
         }
     }
-    
+
     type();
 }
 
 async function sendMessage(){
-    if (isTyping) return; // Блокируем отправку пока бот печатает
-    
+    if (isTyping) return;
+
     const input = document.getElementById("chat-input");
     const messages = document.getElementById("chat-messages");
     const text = input.value.trim();
     if(!text) return;
 
-    // Сообщение пользователя
     messages.innerHTML += `<div class="message user">${text}</div>`;
     input.value = "";
     scrollToBottom();
 
-    // Показываем "Подбираю варианты..."
     const dots = document.createElement("div");
     dots.className = "typing-dots";
     dots.id = "typing-dots";
@@ -232,7 +223,6 @@ async function sendMessage(){
     messages.appendChild(dots);
     scrollToBottom();
 
-    // Блокируем кнопку
     isTyping = true;
     document.getElementById("send-btn").disabled = true;
     document.getElementById("chat-input").disabled = true;
@@ -246,20 +236,15 @@ async function sendMessage(){
 
         const data = await response.json();
 
-        // Убираем точки
         const dotsEl = document.getElementById("typing-dots");
         if (dotsEl) dotsEl.remove();
 
-        // Создаем пустой блок для ответа
         const botMsg = document.createElement("div");
         botMsg.className = "message bot";
         messages.appendChild(botMsg);
         scrollToBottom();
 
-        // Запускаем эффект печати
-        // Скорость: 15 = быстро, 25 = средне, 40 = медленно
         typeText(botMsg, data.reply, 15, function() {
-            // Когда печать закончилась — разблокируем ввод
             isTyping = false;
             document.getElementById("send-btn").disabled = false;
             document.getElementById("chat-input").disabled = false;
@@ -271,7 +256,7 @@ async function sendMessage(){
         if (dotsEl) dotsEl.remove();
 
         messages.innerHTML += `<div class="message bot">Ошибка соединения. Попробуйте позже.</div>`;
-        
+
         isTyping = false;
         document.getElementById("send-btn").disabled = false;
         document.getElementById("chat-input").disabled = false;
