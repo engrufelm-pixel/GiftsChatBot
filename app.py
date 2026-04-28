@@ -1,6 +1,7 @@
 import os
 import re
 import time
+import random
 import pandas as pd
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
@@ -21,7 +22,6 @@ client = OpenAI(
 session_memory = {
     "budget": None,
     "status": None,
-    "company": None,
     "shown_articles": []
 }
 
@@ -45,6 +45,8 @@ df["Цена_число"] = pd.to_numeric(df["Цена_число"], errors="coe
 df = df[df["Цена_число"].notna()]
 df = df[df["Цена_число"] > 100]
 
+
+# ===== ВСПОМОГАТЕЛЬНЫЕ =====
 
 def extract_budget(text):
     match = re.search(r"\d{3,6}", text.replace(" ", ""))
@@ -76,23 +78,34 @@ def answer_faq(text):
     return None
 
 
-def pick_products(budget, status):
+# ===== НОВАЯ ЛОГИКА ПОДБОРА =====
+
+def build_selection(budget, status):
     filtered = df[df["Цена_число"] <= budget]
 
     if status == "vip":
-        exclude_words = ["кружк", "чайник", "шляп", "подставк"]
-        for word in exclude_words:
-            filtered = filtered[~filtered["Название"].str.lower().str.contains(word)]
+        filtered = filtered[filtered["Цена_число"] >= budget * 0.5]
 
-        filtered = filtered[filtered["Цена_число"] >= budget * 0.6]
-
-    filtered = filtered.sort_values(by="Цена_число", ascending=False)
-
-    # исключаем уже показанные
+    # убираем уже показанные
     filtered = filtered[~filtered["Артикул"].isin(session_memory["shown_articles"])]
 
-    return filtered.head(5)
+    # группируем по категориям
+    grouped = filtered.groupby("Категория")
 
+    selected = []
+
+    for _, group in grouped:
+        group = group.sort_values("Цена_число", ascending=False)
+        selected.append(group.iloc[0])
+
+    result = pd.DataFrame(selected)
+
+    result = result.sort_values("Цена_число", ascending=False)
+
+    return result.head(5)
+
+
+# ===== ROUTES =====
 
 @app.route("/")
 def index():
@@ -108,24 +121,24 @@ def chat():
     if faq:
         return jsonify({"reply": faq})
 
-    # ЕЩЁ — без OpenAI
+    # "ЕЩЁ" — без OpenAI
     if any(word in user_message.lower() for word in ["еще", "ещё", "другие"]):
         if not session_memory["budget"]:
             return jsonify({"reply": "Сначала укажите бюджет."})
 
-        products = pick_products(
+        products = build_selection(
             session_memory["budget"],
             session_memory["status"]
         )
 
         if products.empty:
-            return jsonify({"reply": "Дополнительных вариантов больше нет в рамках бюджета."})
+            return jsonify({"reply": "Дополнительных вариантов больше нет."})
 
         session_memory["shown_articles"].extend(products["Артикул"].tolist())
 
-        response = "Вот дополнительные варианты:\n\n"
+        response = "Дополнительные варианты:\n\n"
         for _, row in products.iterrows():
-            response += f"• {row['Название']} — {row['Цена']} руб. (Артикул {row.get('Артикул','')})\n"
+            response += f"• {row['Название']} — {row['Цена']} руб. (Артикул {row['Артикул']})\n"
 
         return jsonify({"reply": response})
 
@@ -134,13 +147,13 @@ def chat():
     status = detect_status(user_message)
 
     if not budget:
-        return jsonify({"reply": "Пожалуйста, укажите бюджет (например: на сумму 5000 руб.)."})
+        return jsonify({"reply": "Пожалуйста, укажите бюджет (например: 5000 руб.)."})
 
     session_memory["budget"] = budget
     session_memory["status"] = status
     session_memory["shown_articles"] = []
 
-    products = pick_products(budget, status)
+    products = build_selection(budget, status)
 
     if products.empty:
         return jsonify({"reply": "К сожалению, подходящих товаров не найдено."})
@@ -149,7 +162,7 @@ def chat():
 
     catalog_text = "\n".join(
         products.apply(
-            lambda row: f"{row['Название']} — {row['Цена']} руб. (Артикул {row.get('Артикул','')})",
+            lambda row: f"{row['Название']} — {row['Цена']} руб. (Артикул {row['Артикул']})",
             axis=1
         ).tolist()
     )
