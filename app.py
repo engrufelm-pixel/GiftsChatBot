@@ -18,7 +18,7 @@ client = OpenAI(
     base_url=os.getenv("OPENAI_BASE_URL")
 )
 
-# ===== Загрузка каталога =====
+# ===== Загрузка и очистка каталога =====
 df = pd.read_excel("catalog.xlsx")
 
 df = df[
@@ -49,11 +49,11 @@ def extract_budget(text):
 def detect_status(text):
     text = text.lower()
     if "топ" in text or "vip" in text or "директор" in text:
-        return "топ-менеджмента"
+        return "vip"
     if "менеджер" in text:
-        return "менеджеров"
+        return "manager"
     if "сотрудник" in text:
-        return "сотрудников"
+        return "staff"
     return None
 
 
@@ -82,6 +82,22 @@ def answer_faq(text):
     return None
 
 
+def pick_products(filtered, budget, status):
+    # VIP логика
+    if status == "vip":
+        exclude_words = ["кружк", "чайник", "шляп", "подставк"]
+        for word in exclude_words:
+            filtered = filtered[~filtered["Название"].str.lower().str.contains(word)]
+
+        filtered = filtered[filtered["Цена_число"] >= budget * 0.6]
+        filtered = filtered.sort_values(by="Цена_число", ascending=False)
+
+    else:
+        filtered = filtered.sort_values(by="Цена_число", ascending=False)
+
+    return filtered.head(5)
+
+
 # ===== ROUTES =====
 
 @app.route("/")
@@ -93,7 +109,7 @@ def index():
 def chat():
     user_message = request.json.get("message")
 
-    # 1️⃣ FAQ — первыми
+    # 1️⃣ FAQ
     faq = answer_faq(user_message)
     if faq:
         time.sleep(1)
@@ -101,7 +117,6 @@ def chat():
 
     # 2️⃣ Бюджет
     budget = extract_budget(user_message)
-
     if not budget:
         return jsonify({"reply": "Пожалуйста, укажите бюджет (например: на сумму 5000 руб.)."})
 
@@ -110,10 +125,11 @@ def chat():
 
     # 3️⃣ Фильтрация
     filtered = df[df["Цена_число"] <= budget]
-    filtered = filtered.sort_values(by="Цена_число", ascending=False).head(8)
 
     if filtered.empty:
         return jsonify({"reply": "К сожалению, в указанном бюджете подходящих товаров не найдено."})
+
+    filtered = pick_products(filtered, budget, status)
 
     catalog_text = "\n".join(
         filtered.apply(
@@ -137,7 +153,6 @@ def chat():
 
 Правила:
 - Не начинай каждый ответ с приветствия.
-- Используй приветствие только если уместно.
 - Используй только товары из списка.
 - Не придумывай позиции.
 - Не добавляй вымышленные характеристики.
