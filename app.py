@@ -1,16 +1,26 @@
+import os
 import re
 import pandas as pd
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
+from dotenv import load_dotenv
+from openai import OpenAI
+
+load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
 
-# ===== ЗАГРУЗКА КАТАЛОГА =====
+client = OpenAI(
+    api_key=os.getenv("OPENAI_API_KEY"),
+    base_url=os.getenv("OPENAI_BASE_URL")
+)
+
+# ===== ЗАГРУЗКА И ЧИСТКА =====
 df = pd.read_excel("catalog.xlsx")
 
 df = df[
-    (~df["Название"].str.contains("Бренд|Размер|Свободно|На складе|В пути|Европа|Поиск|Найдено", na=False)) &
+    (~df["Название"].str.contains("Бренд|Размер|Свободно|На складе|В пути|Европа|Поиск|Найдено", na=False, case=False)) &
     (~df["Название"].str.contains(":", na=False)) &
     (df["Название"].str.len() > 5)
 ]
@@ -21,129 +31,104 @@ df["Цена_число"] = (
     .str.replace(",", ".")
     .str.replace(" ", "")
 )
-
-df["Цена_число"] = pd.to_numeric(df["Цена_число"], errors="coerce")
-df = df[df["Цена_число"] > 100]
-
-
-# ===== ВСПОМОГАТЕЛЬНЫЕ =====
+df["Цена_чиflow"] = pd.to_numeric(df["Цена_число"], errors="coerce")
+df = df[df["Цена_чиflow"].notna()]
+df = df[df["Цена_чиflow"] > 100]
 
 def extract_budget(text):
     match = re.search(r"\d{3,6}", text.replace(" ", ""))
     return int(match.group()) if match else None
 
-
-def detect_vip(text):
-    text = text.lower()
-    return "топ" in text or "vip" in text or "директор" in text
-
-
 def answer_faq(text):
     text = text.lower()
-
-    if "доставк" in text:
-        return "Мы осуществляем доставку по всей России. Сроки и стоимость рассчитываются индивидуально."
-
-    if "логотип" in text or "нанес" in text:
-        return "Да, возможно нанесение логотипа различными способами: шелкография, гравировка, УФ-печать и другие."
-
-    if "срок" in text:
-        return "Срок изготовления зависит от объёма и типа нанесения. В среднем от 3 до 14 рабочих дней."
-
-    if "опт" in text:
-        return "Да, предусмотрены оптовые условия. Стоимость зависит от тиража."
-
+    if "доставк" in text: return "Мы осуществляем доставку по всей России. Сроки и стоимость рассчитываются индивидуально."
+    if "логотип" in text or "нанес" in text: return "Да, возможно нанесение логотипа: шелкография, гравировка, УФ-печать и другие способы."
+    if "срок" in text: return "Срок изготовления — от 3 до 14 рабочих дней в зависимости от тиража."
+    if "опт" in text: return "Да, мы работаем с оптовыми заказами. Цена зависит от объема партии."
     return None
 
+def build_smart_selection(budget, is_vip):
+    # Фильтруем по бюджету
+    filtered = df[df["Цена_чиflow"] <= budget].copy()
+    
+    if is_vip:
+        filtered = filtered[filtered["Цена_чиflow"] >= budget * 0.3]
 
-def detect_type(name):
-    name = name.lower()
-
-    if "набор" in name:
-        return "set"
-    if "термос" in name or "кружк" in name or "чайник" in name:
-        return "drinkware"
-    if "ежедневник" in name or "блокнот" in name:
-        return "stationery"
-    if "рюкзак" in name or "сумк" in name:
-        return "bags"
-    if "power" in name or "заряд" in name:
-        return "tech"
-    if "ручк" in name:
-        return "pen"
-    return "other"
-
-
-def build_selection(budget, vip):
-    filtered = df[df["Цена_число"] <= budget]
-
-    if vip:
-        filtered = filtered[filtered["Цена_число"] >= budget * 0.4]
-
-    filtered = filtered.sort_values(by="Цена_число", ascending=False)
+    filtered = filtered.sort_values(by="Цена_чиflow", ascending=False)
 
     selected = []
-    used_types = set()
+    has_set = False # Флаг, чтобы взять только ОДИН набор
 
     for _, row in filtered.iterrows():
-        t = detect_type(row["Название"])
-
-        if t not in used_types:
-            selected.append(row)
-            used_types.add(t)
-
+        name_lower = row["Название"].lower()
+        
+        # Если это набор и у нас уже есть один набор в списке — пропускаем
+        if "набор" in name_lower and has_set:
+            continue
+        
+        # Если это первый набор — берем его и ставим метку
+        if "набор" in name_lower:
+            has_set = True
+            
+        selected.append(row)
+        
         if len(selected) == 5:
             break
 
-    # если меньше 5 — добираем просто по цене
+    # Если вдруг не набрали 5 (из-за фильтра наборов), добираем остальными
     if len(selected) < 5:
         for _, row in filtered.iterrows():
-            if row["Артикул"] not in [r["Артикул"] for r in selected]:
+            if row["Артикул"] not in [s["Артикул"] for s in selected]:
                 selected.append(row)
             if len(selected) == 5:
                 break
-
+                
     return selected
-
-
-# ===== ROUTES =====
 
 @app.route("/")
 def index():
     return render_template("index.html")
 
-
 @app.route("/chat", methods=["POST"])
 def chat():
-    user_message = request.json.get("message")
+    user_message = request.json.get("message", "")
 
+    # 1. FAQ
     faq = answer_faq(user_message)
     if faq:
         return jsonify({"reply": faq})
 
+    # 2. Бюджет
     budget = extract_budget(user_message)
     if not budget:
-        return jsonify({"reply": "Пожалуйста, укажите бюджет (например: 5000 руб.)."})
+        return jsonify({"reply": "Пожалуйста, укажите ваш бюджет (например, до 5000 руб.)."})
 
-    vip = detect_vip(user_message)
+    is_vip = any(word in user_message.lower() for word in ["топ", "vip", "директор", "руковод"])
 
-    products = build_selection(budget, vip)
+    # 3. Подбор
+    products = build_smart_selection(budget, is_vip)
 
     if not products:
-        return jsonify({"reply": "К сожалению, подходящих товаров не найдено."})
+        return jsonify({"reply": "К сожалению, в этом бюджете ничего не нашлось."})
 
-    response_text = f"Подборка в бюджете до {budget} руб:\n\n"
-
-    for row in products:
-        response_text += (
-            f"• {row['Название']}\n"
-            f"  Цена: {row['Цена']} руб.\n"
-            f"  Артикул: {row['Артикул']}\n"
-            f"  Ссылка: https://gifts.ru/search/?q={row['Артикул']}\n\n"
+    # 4. OpenAI только для короткого приветствия (для скорости)
+    try:
+        intro_res = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": f"Напиши ОДНУ короткую вежливую фразу о том, что ты подобрал товары для запроса: {user_message}"}],
+            max_tokens=30,
+            temperature=0.7
         )
+        intro = intro_res.choices[0].message.content.strip()
+    except:
+        intro = "Вот подходящие варианты по вашему запросу:"
 
-    return jsonify({"reply": response_text})
+    # 5. Формируем ответ
+    reply = f"{intro}\n\n"
+    for item in products:
+        reply += f"• {item['Название']}\n  Цена: {item['Цена']} руб.\n  Артикул: {item['Артикул']}\n\n"
 
+    return jsonify({"reply": reply})
 
 if __name__ == "__main__":
     app.run(port=5000)
