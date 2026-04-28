@@ -12,13 +12,19 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app)
 
-# ===== Подключение к AITunnel =====
 client = OpenAI(
     api_key=os.getenv("OPENAI_API_KEY"),
     base_url=os.getenv("OPENAI_BASE_URL")
 )
 
-# ===== Загрузка и очистка каталога =====
+# ===== ПАМЯТЬ =====
+session_memory = {
+    "budget": None,
+    "status": None,
+    "company": None
+}
+
+# ===== КАТАЛОГ =====
 df = pd.read_excel("catalog.xlsx")
 
 df = df[
@@ -39,7 +45,7 @@ df = df[df["Цена_число"].notna()]
 df = df[df["Цена_число"] > 100]
 
 
-# ===== Вспомогательные функции =====
+# ===== ФУНКЦИИ =====
 
 def extract_budget(text):
     match = re.search(r"\d{3,6}", text.replace(" ", ""))
@@ -83,7 +89,6 @@ def answer_faq(text):
 
 
 def pick_products(filtered, budget, status):
-    # VIP логика
     if status == "vip":
         exclude_words = ["кружк", "чайник", "шляп", "подставк"]
         for word in exclude_words:
@@ -115,15 +120,33 @@ def chat():
         time.sleep(1)
         return jsonify({"reply": faq})
 
-    # 2️⃣ Бюджет
-    budget = extract_budget(user_message)
-    if not budget:
+    # 2️⃣ Проверка "ещё"
+    if any(word in user_message.lower() for word in ["еще", "ещё", "другие", "варианты"]):
+        if session_memory["budget"]:
+            budget = session_memory["budget"]
+            status = session_memory["status"]
+            company = session_memory["company"]
+        else:
+            return jsonify({"reply": "Сначала укажите бюджет и параметры подбора."})
+    else:
+        budget = extract_budget(user_message)
+        status = detect_status(user_message)
+        company = detect_company(user_message)
+
+        if budget:
+            session_memory["budget"] = budget
+        if status:
+            session_memory["status"] = status
+        if company:
+            session_memory["company"] = company
+
+    if not session_memory["budget"]:
         return jsonify({"reply": "Пожалуйста, укажите бюджет (например: на сумму 5000 руб.)."})
 
-    status = detect_status(user_message)
-    company = detect_company(user_message)
+    budget = session_memory["budget"]
+    status = session_memory["status"]
+    company = session_memory["company"]
 
-    # 3️⃣ Фильтрация
     filtered = df[df["Цена_число"] <= budget]
 
     if filtered.empty:
@@ -151,23 +174,18 @@ def chat():
                     "content": f"""
 Ты консультант gifts.ru.
 
-Правила:
-- Не начинай каждый ответ с приветствия.
-- Используй только товары из списка.
-- Не придумывай позиции.
-- Не добавляй вымышленные характеристики.
-- Не считай общую сумму.
-- Не выходи за бюджет.
-- Краткое деловое вступление + список 4–5 товаров.
+Не начинай каждый ответ с приветствия.
+Используй только товары из списка.
+Не придумывай позиции.
+Не добавляй вымышленные характеристики.
+Не считай общую сумму.
+Краткое деловое вступление + список 4–5 товаров.
 
 Товары:
 {catalog_text}
 """
                 },
-                {
-                    "role": "user",
-                    "content": user_message
-                }
+                {"role": "user", "content": user_message}
             ]
         )
 
