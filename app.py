@@ -16,7 +16,6 @@ client = OpenAI(
     base_url=os.getenv("OPENAI_BASE_URL")
 )
 
-# ===== КАТАЛОГ =====
 df = pd.read_excel("catalog.xlsx")
 
 df = df[
@@ -33,7 +32,6 @@ df["Цена_число"] = (
 )
 
 df["Цена_число"] = pd.to_numeric(df["Цена_число"], errors="coerce")
-df = df[df["Цена_число"].notna()]
 df = df[df["Цена_число"] > 100]
 
 
@@ -44,9 +42,7 @@ def extract_budget(text):
 
 def detect_vip(text):
     text = text.lower()
-    if "топ" in text or "vip" in text or "директор" in text:
-        return True
-    return False
+    return "топ" in text or "vip" in text or "директор" in text
 
 
 def answer_faq(text):
@@ -67,7 +63,7 @@ def answer_faq(text):
     return None
 
 
-def build_sets(budget, vip):
+def build_selection(budget, vip):
     filtered = df[df["Цена_число"] <= budget]
 
     if vip:
@@ -75,21 +71,17 @@ def build_sets(budget, vip):
 
     filtered = filtered.sort_values(by="Цена_число", ascending=False)
 
-    # 1 подборка — премиальная
-    set1 = filtered.head(5)
+    selected = []
+    used_categories = set()
 
-    # 2 подборка — средний ценовой сегмент
-    mid = filtered[
-        (filtered["Цена_число"] < budget * 0.8) &
-        (filtered["Цена_число"] > budget * 0.4)
-    ]
-    set2 = mid.head(5)
+    for _, row in filtered.iterrows():
+        if row["Категория"] not in used_categories:
+            selected.append(row)
+            used_categories.add(row["Категория"])
+        if len(selected) == 5:
+            break
 
-    # 3 подборка — универсальная
-    universal = filtered.sample(min(5, len(filtered)))
-    set3 = universal
-
-    return set1, set2, set3
+    return selected
 
 
 @app.route("/")
@@ -106,49 +98,38 @@ def chat():
         return jsonify({"reply": faq})
 
     budget = extract_budget(user_message)
-
     if not budget:
         return jsonify({"reply": "Пожалуйста, укажите бюджет (например: 5000 руб.)."})
 
     vip = detect_vip(user_message)
 
-    set1, set2, set3 = build_sets(budget, vip)
+    products = build_selection(budget, vip)
 
-    def format_set(title, dataset):
-        text = f"\n{title}\n\n"
-        for _, row in dataset.iterrows():
-            text += (
-                f"• {row['Название']}\n"
-                f"  Цена: {row['Цена']} руб.\n"
-                f"  Артикул: {row['Артикул']}\n"
-                f"  Ссылка: https://gifts.ru/search/?q={row['Артикул']}\n\n"
-            )
-        return text
+    if not products:
+        return jsonify({"reply": "К сожалению, подходящих товаров не найдено."})
 
-    catalog_text = (
-        format_set("Вариант 1 — Премиальный:", set1) +
-        format_set("Вариант 2 — Сбалансированный:", set2) +
-        format_set("Вариант 3 — Универсальный:", set3)
+    catalog_text = "\n".join(
+        [
+            f"{row['Название']} — {row['Цена']} руб. (Артикул {row['Артикул']})"
+            for row in products
+        ]
     )
 
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         temperature=0.2,
-        max_tokens=400,
+        max_tokens=200,
         messages=[
             {
                 "role": "system",
                 "content": """
 Ты консультант gifts.ru.
-Оформи аккуратно предложенные подборки.
-Не придумывай товары.
-Не добавляй вымышленные характеристики.
+Ответ без Markdown.
+Без решёток, без звёздочек.
+Короткое вступление и затем список из 5 товаров.
 """
             },
-            {
-                "role": "user",
-                "content": catalog_text
-            }
+            {"role": "user", "content": catalog_text}
         ]
     )
 
