@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Консультант gifts.ru</title>
-
 <style>
 body { margin:0; font-family: Arial, sans-serif; }
 
@@ -20,6 +19,9 @@ body { margin:0; font-family: Arial, sans-serif; }
     align-items:center;
     justify-content:center;
     cursor:pointer;
+    font-size: 28px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    z-index: 999;
 }
 
 #chat-window {
@@ -33,6 +35,7 @@ body { margin:0; font-family: Arial, sans-serif; }
     display:none;
     flex-direction:column;
     box-shadow:0 0 20px rgba(0,0,0,0.2);
+    z-index: 998;
 }
 
 #chat-header {
@@ -41,6 +44,8 @@ body { margin:0; font-family: Arial, sans-serif; }
     font-weight:bold;
     display:flex;
     justify-content:space-between;
+    border-radius: 15px 15px 0 0;
+    color: #333;
 }
 
 #chat-messages {
@@ -48,30 +53,47 @@ body { margin:0; font-family: Arial, sans-serif; }
     padding:15px;
     overflow-y:auto;
     background:#f5f5f5;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
 }
 
 .message {
-    margin-bottom:10px;
-    padding:10px;
+    padding:10px 14px;
     border-radius:10px;
+    font-size: 14px;
+    line-height: 1.6;
+    max-width: 85%;
+    white-space: pre-wrap;
 }
 
 .user {
     background:#a6ce39;
-    align-self:flex-end;
+    align-self: flex-end;
+    color: #333;
 }
 
 .bot {
     background:#ffffff;
+    align-self: flex-start;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    color: #333;
 }
 
-.typing {
+.typing-dots {
     font-style: italic;
     opacity: 0.6;
+    background: #fff;
+    align-self: flex-start;
+    padding: 10px 14px;
+    border-radius: 10px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    font-size: 14px;
 }
 
 #chat-input-area {
     display:flex;
+    border-top: 1px solid #eee;
 }
 
 #chat-input {
@@ -79,13 +101,34 @@ body { margin:0; font-family: Arial, sans-serif; }
     padding:12px;
     border:none;
     outline:none;
+    font-size: 14px;
 }
 
 #send-btn {
     background:#a6ce39;
     border:none;
-    padding:12px;
+    padding:12px 16px;
     cursor:pointer;
+    font-size: 18px;
+}
+
+#send-btn:hover {
+    background: #95b832;
+}
+
+.cursor-blink {
+    display: inline-block;
+    width: 2px;
+    height: 14px;
+    background: #333;
+    margin-left: 2px;
+    animation: blink 0.7s infinite;
+    vertical-align: middle;
+}
+
+@keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
 }
 </style>
 </head>
@@ -96,11 +139,12 @@ body { margin:0; font-family: Arial, sans-serif; }
 <div id="chat-window">
     <div id="chat-header">
         Консультант gifts.ru
-        <span onclick="toggleChat()">✕</span>
+        <span onclick="toggleChat()" style="cursor:pointer;">✕</span>
     </div>
 
     <div id="chat-messages">
-        <div class="message bot">Здравствуйте! Напишите бюджет и кому нужен подарок 🎁</div>
+        <div class="message bot">Здравствуйте! Я помогу подобрать идеальный подарок 🎁
+Напишите бюджет и кому нужен подарок!</div>
     </div>
 
     <div id="chat-input-area">
@@ -112,9 +156,11 @@ body { margin:0; font-family: Arial, sans-serif; }
 </div>
 
 <script>
+let isTyping = false;
+
 function toggleChat(){
-    const win=document.getElementById("chat-window");
-    win.style.display = win.style.display==="flex" ? "none" : "flex";
+    const win = document.getElementById("chat-window");
+    win.style.display = win.style.display === "flex" ? "none" : "flex";
 }
 
 function scrollToBottom(){
@@ -122,35 +168,115 @@ function scrollToBottom(){
     messages.scrollTop = messages.scrollHeight;
 }
 
+function typeText(element, text, speed, callback) {
+    let i = 0;
+    element.innerHTML = '<span class="cursor-blink"></span>';
+    
+    function type() {
+        if (i < text.length) {
+            let char = text.charAt(i);
+            
+            // Убираем курсор, добавляем символ, возвращаем курсор
+            let cursor = element.querySelector('.cursor-blink');
+            if (cursor) cursor.remove();
+            
+            // Если встречаем \n — делаем перенос строки
+            if (char === '\n') {
+                element.innerHTML += '<br>';
+            } else {
+                element.innerHTML += char;
+            }
+            
+            // Добавляем мигающий курсор обратно
+            element.innerHTML += '<span class="cursor-blink"></span>';
+            
+            i++;
+            scrollToBottom();
+            
+            // Скорость: после точки или переноса строки — пауза побольше
+            let delay = speed;
+            if (char === '.' || char === '!' || char === '?') delay = speed * 4;
+            if (char === '\n') delay = speed * 3;
+            if (char === ',') delay = speed * 2;
+            
+            setTimeout(type, delay);
+        } else {
+            // Убираем курсор в конце
+            let cursor = element.querySelector('.cursor-blink');
+            if (cursor) cursor.remove();
+            if (callback) callback();
+        }
+    }
+    
+    type();
+}
+
 async function sendMessage(){
-    const input=document.getElementById("chat-input");
-    const messages=document.getElementById("chat-messages");
-    const text=input.value.trim();
+    if (isTyping) return; // Блокируем отправку пока бот печатает
+    
+    const input = document.getElementById("chat-input");
+    const messages = document.getElementById("chat-messages");
+    const text = input.value.trim();
     if(!text) return;
 
+    // Сообщение пользователя
     messages.innerHTML += `<div class="message user">${text}</div>`;
-    input.value="";
+    input.value = "";
     scrollToBottom();
 
-    const typingElement = document.createElement("div");
-    typingElement.className = "message bot typing";
-    typingElement.id = "typing";
-    typingElement.innerText = "Печатает...";
-    messages.appendChild(typingElement);
+    // Показываем "Подбираю варианты..."
+    const dots = document.createElement("div");
+    dots.className = "typing-dots";
+    dots.id = "typing-dots";
+    dots.innerText = "Подбираю варианты...";
+    messages.appendChild(dots);
     scrollToBottom();
 
-    const response=await fetch("/chat",{
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({message:text})
-    });
+    // Блокируем кнопку
+    isTyping = true;
+    document.getElementById("send-btn").disabled = true;
+    document.getElementById("chat-input").disabled = true;
 
-    const data=await response.json();
+    try {
+        const response = await fetch("/chat", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({message: text})
+        });
 
-    document.getElementById("typing").remove();
+        const data = await response.json();
 
-    messages.innerHTML += `<div class="message bot">${data.reply.replace(/\n/g,"<br>")}</div>`;
-    scrollToBottom();
+        // Убираем точки
+        const dotsEl = document.getElementById("typing-dots");
+        if (dotsEl) dotsEl.remove();
+
+        // Создаем пустой блок для ответа
+        const botMsg = document.createElement("div");
+        botMsg.className = "message bot";
+        messages.appendChild(botMsg);
+        scrollToBottom();
+
+        // Запускаем эффект печати
+        // Скорость: 15 = быстро, 25 = средне, 40 = медленно
+        typeText(botMsg, data.reply, 15, function() {
+            // Когда печать закончилась — разблокируем ввод
+            isTyping = false;
+            document.getElementById("send-btn").disabled = false;
+            document.getElementById("chat-input").disabled = false;
+            document.getElementById("chat-input").focus();
+        });
+
+    } catch(error) {
+        const dotsEl = document.getElementById("typing-dots");
+        if (dotsEl) dotsEl.remove();
+
+        messages.innerHTML += `<div class="message bot">Ошибка соединения. Попробуйте позже.</div>`;
+        
+        isTyping = false;
+        document.getElementById("send-btn").disabled = false;
+        document.getElementById("chat-input").disabled = false;
+        scrollToBottom();
+    }
 }
 </script>
 
