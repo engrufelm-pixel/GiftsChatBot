@@ -1,11 +1,7 @@
-import os
 import re
 import pandas as pd
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
-from dotenv import load_dotenv
-
-load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
@@ -29,8 +25,6 @@ df["Цена_число"] = (
 df["Цена_число"] = pd.to_numeric(df["Цена_число"], errors="coerce")
 df = df[df["Цена_число"] > 100]
 
-
-# ===== ВСПОМОГАТЕЛЬНЫЕ =====
 
 def extract_budget(text):
     match = re.search(r"\d{3,6}", text.replace(" ", ""))
@@ -99,7 +93,6 @@ def build_selection(budget, vip):
         if len(selected) == 5:
             break
 
-    # если типов меньше 5 — добираем
     if len(selected) < 5:
         for _, row in filtered.iterrows():
             if row not in selected:
@@ -109,8 +102,6 @@ def build_selection(budget, vip):
 
     return selected
 
-
-# ===== ROUTES =====
 
 @app.route("/")
 def index():

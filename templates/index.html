@@ -3,197 +3,89 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AI-консультант gifts.ru</title>
+<title>Консультант gifts.ru</title>
 
 <style>
-body {
-    margin:0;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-}
-
-:root {
-    --brand: #a6ce39;
-    --brand-dark: #8fba2e;
-    --bg-light: #f7f8fa;
-}
+body { margin:0; font-family: Arial, sans-serif; }
 
 #chat-button {
     position: fixed;
-    bottom: 25px;
-    right: 25px;
-    width: 64px;
-    height: 64px;
-    background: var(--brand);
+    bottom: 20px;
+    right: 20px;
+    width: 60px;
+    height: 60px;
+    background: #a6ce39;
     border-radius: 50%;
     display:flex;
     align-items:center;
     justify-content:center;
     cursor:pointer;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.25);
-    transition: 0.3s;
-    z-index:1000;
-}
-
-#chat-button:hover {
-    transform: scale(1.08);
-    background: var(--brand-dark);
 }
 
 #chat-window {
     position: fixed;
-    bottom: 100px;
-    right: 25px;
+    bottom: 90px;
+    right: 20px;
     width: 400px;
-    height: 600px;
-    background: white;
-    border-radius: 20px;
-    box-shadow: 0 25px 60px rgba(0,0,0,0.3);
+    height: 550px;
+    background:white;
+    border-radius:15px;
     display:none;
-    flex-direction: column;
-    overflow: hidden;
-    animation: slideUp 0.25s ease;
-    z-index:1000;
-}
-
-/* ✅ МОБИЛЬНАЯ ВЕРСИЯ */
-@media (max-width: 600px) {
-
-    #chat-window {
-        width: 100%;
-        height: 100%;
-        right: 0;
-        bottom: 0;
-        border-radius: 0;
-    }
-
-    #chat-button {
-        bottom: 15px;
-        right: 15px;
-    }
-
-    #chat-input {
-        font-size: 16px; /* чтобы iPhone не зумил */
-    }
-}
-
-@keyframes slideUp {
-    from {opacity:0; transform:translateY(15px);}
-    to {opacity:1; transform:translateY(0);}
+    flex-direction:column;
+    box-shadow:0 0 20px rgba(0,0,0,0.2);
 }
 
 #chat-header {
-    background: var(--brand);
-    padding: 16px 18px;
+    background:#a6ce39;
+    padding:15px;
+    font-weight:bold;
     display:flex;
     justify-content:space-between;
-    align-items:center;
-}
-
-.header-left {
-    display:flex;
-    flex-direction:column;
-}
-
-.header-title {
-    font-weight:600;
-    font-size:15px;
-}
-
-.status {
-    font-size:12px;
-    display:flex;
-    align-items:center;
-    gap:6px;
-    opacity:0.8;
-}
-
-.status-dot {
-    width:8px;
-    height:8px;
-    background:#2ecc71;
-    border-radius:50%;
-    position:relative;
-}
-
-.status-dot::after {
-    content:"";
-    position:absolute;
-    width:8px;
-    height:8px;
-    border-radius:50%;
-    background:#2ecc71;
-    animation:pulse 1.5s infinite;
-    opacity:0.6;
-}
-
-@keyframes pulse {
-    0% {transform:scale(1); opacity:0.6;}
-    70% {transform:scale(2.5); opacity:0;}
-    100% {opacity:0;}
 }
 
 #chat-messages {
     flex:1;
-    padding:20px;
+    padding:15px;
     overflow-y:auto;
-    background: var(--bg-light);
-    display:flex;
-    flex-direction:column;
-    gap:12px;
-    scroll-behavior: smooth;
+    background:#f5f5f5;
 }
 
 .message {
-    padding:12px 16px;
-    border-radius:16px;
-    max-width:80%;
-    font-size:14px;
-    line-height:1.5;
-    white-space:pre-line;
+    margin-bottom:10px;
+    padding:10px;
+    border-radius:10px;
 }
 
 .user {
+    background:#a6ce39;
     align-self:flex-end;
-    background: var(--brand);
 }
 
 .bot {
-    align-self:flex-start;
-    background:white;
-    box-shadow: 0 3px 10px rgba(0,0,0,0.08);
+    background:#ffffff;
 }
 
-.typing-indicator {
+.typing {
     font-style: italic;
-    opacity:0.6;
+    opacity: 0.6;
 }
 
 #chat-input-area {
     display:flex;
-    border-top:1px solid #eee;
-    background:white;
 }
 
 #chat-input {
     flex:1;
-    padding:16px;
+    padding:12px;
     border:none;
     outline:none;
-    font-size:14px;
 }
 
 #send-btn {
-    background: var(--brand);
+    background:#a6ce39;
     border:none;
-    padding:0 22px;
+    padding:12px;
     cursor:pointer;
-    font-size:16px;
-    transition:0.2s;
-}
-
-#send-btn:hover {
-    background: var(--brand-dark);
 }
 </style>
 </head>
@@ -203,14 +95,8 @@ body {
 
 <div id="chat-window">
     <div id="chat-header">
-        <div class="header-left">
-            <div class="header-title">Консультант gifts.ru</div>
-            <div class="status">
-                <div class="status-dot"></div>
-                Онлайн
-            </div>
-        </div>
-        <span style="cursor:pointer;" onclick="toggleChat()">✕</span>
+        Консультант gifts.ru
+        <span onclick="toggleChat()">✕</span>
     </div>
 
     <div id="chat-messages">
@@ -236,20 +122,6 @@ function scrollToBottom(){
     messages.scrollTop = messages.scrollHeight;
 }
 
-function typeWriter(element, text, speed = 12) {
-    let i = 0;
-    element.textContent = "";
-    function typing() {
-        if (i < text.length) {
-            element.textContent += text.charAt(i);
-            i++;
-            scrollToBottom();
-            setTimeout(typing, speed);
-        }
-    }
-    typing();
-}
-
 async function sendMessage(){
     const input=document.getElementById("chat-input");
     const messages=document.getElementById("chat-messages");
@@ -260,7 +132,11 @@ async function sendMessage(){
     input.value="";
     scrollToBottom();
 
-    messages.innerHTML += `<div class="message bot typing-indicator" id="typing">Печатаю ответ...</div>`;
+    const typingElement = document.createElement("div");
+    typingElement.className = "message bot typing";
+    typingElement.id = "typing";
+    typingElement.innerText = "Печатает...";
+    messages.appendChild(typingElement);
     scrollToBottom();
 
     const response=await fetch("/chat",{
@@ -273,11 +149,8 @@ async function sendMessage(){
 
     document.getElementById("typing").remove();
 
-    const botMessage = document.createElement("div");
-    botMessage.className = "message bot";
-    messages.appendChild(botMessage);
-
-    typeWriter(botMessage, data.reply, 10);
+    messages.innerHTML += `<div class="message bot">${data.reply.replace(/\n/g,"<br>")}</div>`;
+    scrollToBottom();
 }
 </script>
 
