@@ -16,6 +16,7 @@ client = OpenAI(
     base_url=os.getenv("OPENAI_BASE_URL")
 )
 
+# ===== Загрузка каталога =====
 df = pd.read_excel("catalog.xlsx")
 
 df = df[
@@ -32,6 +33,7 @@ df["Цена_число"] = (
 )
 
 df["Цена_число"] = pd.to_numeric(df["Цена_число"], errors="coerce")
+df = df[df["Цена_число"].notna()]
 df = df[df["Цена_число"] > 100]
 
 
@@ -93,6 +95,7 @@ def index():
 def chat():
     user_message = request.json.get("message")
 
+    # FAQ
     faq = answer_faq(user_message)
     if faq:
         return jsonify({"reply": faq})
@@ -108,7 +111,8 @@ def chat():
     if not products:
         return jsonify({"reply": "К сожалению, подходящих товаров не найдено."})
 
-    catalog_text = "\n".join(
+    # ✅ GPT получает только реальные товары
+    product_list = "\n".join(
         [
             f"{row['Название']} — {row['Цена']} руб. (Артикул {row['Артикул']})"
             for row in products
@@ -117,19 +121,23 @@ def chat():
 
     response = client.chat.completions.create(
         model="gpt-4o-mini",
-        temperature=0.2,
-        max_tokens=200,
+        temperature=0.1,
+        max_tokens=180,
         messages=[
             {
                 "role": "system",
                 "content": """
 Ты консультант gifts.ru.
-Ответ без Markdown.
-Без решёток, без звёздочек.
-Короткое вступление и затем список из 5 товаров.
+Оформи кратко и делово список товаров.
+Не добавляй новые позиции.
+Не изменяй цены.
+Не добавляй характеристик.
 """
             },
-            {"role": "user", "content": catalog_text}
+            {
+                "role": "user",
+                "content": product_list
+            }
         ]
     )
 
