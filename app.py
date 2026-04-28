@@ -21,7 +21,8 @@ client = OpenAI(
 session_memory = {
     "budget": None,
     "status": None,
-    "company": None
+    "company": None,
+    "shown_articles": []
 }
 
 # ===== КАТАЛОГ =====
@@ -95,10 +96,11 @@ def pick_products(filtered, budget, status):
             filtered = filtered[~filtered["Название"].str.lower().str.contains(word)]
 
         filtered = filtered[filtered["Цена_число"] >= budget * 0.6]
-        filtered = filtered.sort_values(by="Цена_число", ascending=False)
 
-    else:
-        filtered = filtered.sort_values(by="Цена_число", ascending=False)
+    filtered = filtered.sort_values(by="Цена_число", ascending=False)
+
+    # Исключаем уже показанные товары
+    filtered = filtered[~filtered["Артикул"].isin(session_memory["shown_articles"])]
 
     return filtered.head(5)
 
@@ -114,20 +116,14 @@ def index():
 def chat():
     user_message = request.json.get("message")
 
-    # 1️⃣ FAQ
     faq = answer_faq(user_message)
     if faq:
         time.sleep(1)
         return jsonify({"reply": faq})
 
-    # 2️⃣ Проверка "ещё"
     if any(word in user_message.lower() for word in ["еще", "ещё", "другие", "варианты"]):
-        if session_memory["budget"]:
-            budget = session_memory["budget"]
-            status = session_memory["status"]
-            company = session_memory["company"]
-        else:
-            return jsonify({"reply": "Сначала укажите бюджет и параметры подбора."})
+        if not session_memory["budget"]:
+            return jsonify({"reply": "Сначала укажите бюджет."})
     else:
         budget = extract_budget(user_message)
         status = detect_status(user_message)
@@ -135,17 +131,17 @@ def chat():
 
         if budget:
             session_memory["budget"] = budget
+            session_memory["shown_articles"] = []  # сброс списка показанных
         if status:
             session_memory["status"] = status
         if company:
             session_memory["company"] = company
 
-    if not session_memory["budget"]:
-        return jsonify({"reply": "Пожалуйста, укажите бюджет (например: на сумму 5000 руб.)."})
-
     budget = session_memory["budget"]
     status = session_memory["status"]
-    company = session_memory["company"]
+
+    if not budget:
+        return jsonify({"reply": "Пожалуйста, укажите бюджет (например: на сумму 5000 руб.)."})
 
     filtered = df[df["Цена_число"] <= budget]
 
@@ -153,6 +149,12 @@ def chat():
         return jsonify({"reply": "К сожалению, в указанном бюджете подходящих товаров не найдено."})
 
     filtered = pick_products(filtered, budget, status)
+
+    if filtered.empty:
+        return jsonify({"reply": "Дополнительных вариантов в рамках указанного бюджета больше нет."})
+
+    # Запоминаем показанные
+    session_memory["shown_articles"].extend(filtered["Артикул"].tolist())
 
     catalog_text = "\n".join(
         filtered.apply(
@@ -163,37 +165,30 @@ def chat():
 
     time.sleep(1.2)
 
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            temperature=0.2,
-            max_tokens=350,
-            messages=[
-                {
-                    "role": "system",
-                    "content": f"""
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        temperature=0.2,
+        max_tokens=350,
+        messages=[
+            {
+                "role": "system",
+                "content": f"""
 Ты консультант gifts.ru.
 
 Не начинай каждый ответ с приветствия.
 Используй только товары из списка.
 Не придумывай позиции.
-Не добавляй вымышленные характеристики.
-Не считай общую сумму.
-Краткое деловое вступление + список 4–5 товаров.
+Краткое вступление + список товаров.
 
 Товары:
 {catalog_text}
 """
-                },
-                {"role": "user", "content": user_message}
-            ]
-        )
+            },
+            {"role": "user", "content": user_message}
+        ]
+    )
 
-        return jsonify({"reply": response.choices[0].message.content})
-
-    except Exception as e:
-        print("Ошибка API:", e)
-        return jsonify({"reply": "Ошибка соединения с AI. Попробуйте ещё раз."})
+    return jsonify({"reply": response.choices[0].message.content})
 
 
 if __name__ == "__main__":
