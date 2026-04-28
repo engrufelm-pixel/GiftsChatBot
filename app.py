@@ -498,7 +498,7 @@ def answer_question_ai(user_message):
         
         # Отправляем весь текст регламента в OpenAI (используем модель 16k чтобы влезло)
         response = client.chat.completions.create(
-            model="gpt-3.5-turbo-16k", 
+            model="gpt-4o-mini", 
             messages=[
                 {
                     "role": "system", 
