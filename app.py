@@ -26,6 +26,8 @@ df["Цена_число"] = pd.to_numeric(df["Цена_число"], errors="coe
 df = df[df["Цена_число"] > 100]
 
 
+# ===== ВСПОМОГАТЕЛЬНЫЕ =====
+
 def extract_budget(text):
     match = re.search(r"\d{3,6}", text.replace(" ", ""))
     return int(match.group()) if match else None
@@ -93,15 +95,18 @@ def build_selection(budget, vip):
         if len(selected) == 5:
             break
 
+    # если меньше 5 — добираем просто по цене
     if len(selected) < 5:
         for _, row in filtered.iterrows():
-            if row not in selected:
+            if row["Артикул"] not in [r["Артикул"] for r in selected]:
                 selected.append(row)
             if len(selected) == 5:
                 break
 
     return selected
 
+
+# ===== ROUTES =====
 
 @app.route("/")
 def index():
