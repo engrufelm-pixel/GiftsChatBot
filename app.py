@@ -513,46 +513,44 @@ def format_products_reply(products, is_vip):
 def answer_question(user_message):
     text = user_message.lower().strip()
 
-    # 1. Сначала ищем в локальном FAQ
+    # 1. Сначала ищем в жестких FAQ_RULES (синонимы)
     for keywords, answer in FAQ_RULES:
         if any(k in text for k in keywords):
             print(f"[FAQ] Ответ найден локально: {user_message[:40]}")
             return answer
 
-    # 2. Если не нашли — идем в AITUNNEL через OpenAI
-    print(f"[AI] Отправляю в AITUNNEL: {user_message[:40]}")
+    # 2. Если не нашли — идем в чистую базу faq_clean.txt через OpenAI
+    print(f"[AI] Отправляю в OpenAI поиск по чистой базе: {user_message[:40]}")
 
     try:
-        with open("knowledge.txt", "r", encoding="utf-8") as f:
-            full_knowledge = f.read()
+        # Читаем чистую базу Q&A
+        with open("faq_clean.txt", "r", encoding="utf-8") as f:
+            faq_base = f.read()
 
         response = client.chat.completions.create(
             model=MODEL_NAME,
             messages=[
                 {
                     "role": "system",
-                    "content": f"""Ты консультант gifts.ru.
-Отвечай строго по базе знаний ниже.
-
-БАЗА ЗНАНИЙ:
-{full_knowledge}
-
-ПРАВИЛА:
-1. Без звездочек.
-2. Без markdown.
-3. Обычный русский язык.
-4. Если нет ответа — скажи: Точный ответ лучше уточнить у менеджера или в личном кабинете gifts.ru.
-5. Не выдумывай."""
+                    "content": f"""Ты консультант gifts.ru. 
+                    Твоя задача: найти ПРАВИЛЬНЫЙ ответ в базе вопросов и ответов ниже.
+                    
+                    БАЗА:
+                    {faq_base}
+                    
+                    ПРАВИЛА:
+                    1. Отвечай только на основе БАЗЫ.
+                    2. Если в базе нет ответа на этот конкретный вопрос, ответь: "Точный ответ лучше уточнить у менеджера или в личном кабинете gifts.ru."
+                    3. Не используй звездочки.
+                    4. Пиши вежливо и кратко."""
                 },
                 {"role": "user", "content": user_message}
             ],
             max_tokens=400,
-            temperature=0.1
+            temperature=0  # Ставим 0 для максимальной точности
         )
 
-        result = response.choices[0].message.content.strip().replace("*", "")
-        print(f"[AI] Ответ получен: {result[:40]}")
-        return result
+        return response.choices[0].message.content.strip().replace("*", "")
 
     except Exception as e:
         print(f"[AI] ОШИБКА: {e}")
