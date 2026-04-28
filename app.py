@@ -4,17 +4,11 @@ import pandas as pd
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 from dotenv import load_dotenv
-from openai import OpenAI
 
 load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
-
-client = OpenAI(
-    api_key=os.getenv("OPENAI_API_KEY"),
-    base_url=os.getenv("OPENAI_BASE_URL")
-)
 
 # ===== ЗАГРУЗКА КАТАЛОГА =====
 df = pd.read_excel("catalog.xlsx")
@@ -66,8 +60,6 @@ def answer_faq(text):
     return None
 
 
-# ===== ОПРЕДЕЛЕНИЕ ТИПА ТОВАРА =====
-
 def detect_type(name):
     name = name.lower()
 
@@ -85,8 +77,6 @@ def detect_type(name):
         return "pen"
     return "other"
 
-
-# ===== ПОДБОР =====
 
 def build_selection(budget, vip):
     filtered = df[df["Цена_число"] <= budget]
@@ -146,31 +136,17 @@ def chat():
     if not products:
         return jsonify({"reply": "К сожалению, подходящих товаров не найдено."})
 
-    product_list = "\n".join(
-        [
-            f"{row['Название']} — {row['Цена']} руб. (Артикул {row['Артикул']})"
-            for row in products
-        ]
-    )
+    response_text = f"Подборка в бюджете до {budget} руб:\n\n"
 
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        temperature=0.2,
-        max_tokens=200,
-        messages=[
-            {
-                "role": "system",
-                "content": """
-Ты консультант gifts.ru.
-Краткое деловое вступление и список из 5 товаров.
-Не придумывай позиции.
-"""
-            },
-            {"role": "user", "content": product_list}
-        ]
-    )
+    for row in products:
+        response_text += (
+            f"• {row['Название']}\n"
+            f"  Цена: {row['Цена']} руб.\n"
+            f"  Артикул: {row['Артикул']}\n"
+            f"  Ссылка: https://gifts.ru/search/?q={row['Артикул']}\n\n"
+        )
 
-    return jsonify({"reply": response.choices[0].message.content})
+    return jsonify({"reply": response_text})
 
 
 if __name__ == "__main__":
