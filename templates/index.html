@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AI-консультант gifts.ru</title>
 
 <style>
@@ -53,6 +54,27 @@ body {
     overflow: hidden;
     animation: slideUp 0.25s ease;
     z-index:1000;
+}
+
+/* ✅ МОБИЛЬНАЯ ВЕРСИЯ */
+@media (max-width: 600px) {
+
+    #chat-window {
+        width: 100%;
+        height: 100%;
+        right: 0;
+        bottom: 0;
+        border-radius: 0;
+    }
+
+    #chat-button {
+        bottom: 15px;
+        right: 15px;
+    }
+
+    #chat-input {
+        font-size: 16px; /* чтобы iPhone не зумил */
+    }
 }
 
 @keyframes slideUp {
