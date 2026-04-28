@@ -490,15 +490,35 @@ def format_products_reply(products, is_vip):
     return "\n".join(lines).strip()
 
 
-def answer_question_local(user_message):
-    text = user_message.lower()
-
-    for keywords, answer in FAQ_RULES:
-        if any(k in text for k in keywords):
-            return answer
-
-    return "Точный ответ лучше уточнить у менеджера или в личном кабинете gifts.ru."
-
+def answer_question_ai(user_message):
+    try:
+        # Читаем ПОЛНЫЙ текст регламента из файла
+        with open("knowledge.txt", "r", encoding="utf-8") as f:
+            full_knowledge = f.read()
+        
+        # Отправляем весь текст регламента в OpenAI (используем модель 16k чтобы влезло)
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo-16k", 
+            messages=[
+                {
+                    "role": "system", 
+                    "content": f"""Ты — база знаний gifts.ru. Твоя единственная информация — этот регламент:
+                    {full_knowledge}
+                    
+                    ЗАДАЧА:
+                    1. Отвечай на вопросы строго по тексту регламента.
+                    2. Если ответа в тексте нет, вежливо скажи, что нужно уточнить у менеджера.
+                    3. Не используй звездочки (*) в тексте.
+                    4. Отвечай кратко и профессионально."""
+                },
+                {"role": "user", "content": user_message}
+            ],
+            temperature=0.2
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        print(f"Ошибка чтения PDF-базы: {e}")
+        return "Произошла ошибка при поиске в базе знаний. Попробуйте переформулировать вопрос."
 
 # =========================
 # ROUTES
@@ -520,7 +540,7 @@ def chat():
         query_type = detect_query_type(user_message)
 
         if query_type == "question":
-            reply = answer_question_local(user_message)
+            reply = answer_question_ai(user_message)
             return jsonify({"reply": reply})
 
         budget = extract_budget(user_message)
