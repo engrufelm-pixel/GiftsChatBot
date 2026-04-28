@@ -19,7 +19,7 @@ client = OpenAI(
 # ===== ЗАГРУЗКА И ОЧИСТКА КАТАЛОГА =====
 df = pd.read_excel("catalog.xlsx")
 
-# Базовая очистка от мусора
+# Убираем системный мусор
 df = df[
     (~df["Название"].str.contains("Бренд|Размер|Свободно|На складе|В пути|Европа|Поиск|Найдено", na=False, case=False)) &
     (~df["Название"].str.contains(":", na=False)) &
@@ -31,66 +31,65 @@ df["Цена_число"] = pd.to_numeric(df["Цена_число"], errors="coe
 df = df[df["Цена_число"].notna()]
 df = df[df["Цена_число"] > 100]
 
-# ===== БАЗА ЗНАНИЙ (ЭКСКУРСИЯ ПО САЙТУ) =====
+# ===== БАЗА ЗНАНИЙ (ОТВЕТЫ НА ВОПРОСЫ КЛИЕНТА) =====
 KNOWLEDGE_BASE = """
-Инструменты и Личный кабинет:
-- Условия работы, бонусы и заказы: в Личном кабинете на gifts.ru.
-- Акт сверки: запросить в Личном кабинете (раздел «Услуги») или через ЭДО.
-- Пункты выдачи: разделы «Контакты» и «Доставка».
-- Дайджест новинок: подписаться на рассылки.
-- Обновление склада и резервов: в реальном времени.
-- Раздел с образцами, каталогами и раскладками: «Маркетинговая поддержка».
-- Памятка по сигнальным образцам: в разделе «Помощь».
-
-Товары и Нанесение:
-- Размеры товара: смотреть поле «Размеры» или фото/видео рядом с людьми.
-- Источник вдохновения: вкладки «Примеры» и «Фотографии» в галерее изображений.
-- Цены: публичная цена сайта и цена с партнерской скидкой.
-- Методы нанесения: выпадающий список «Добавить нанесение» в блоке с ценами.
-- Оригинал-макеты: векторный файл ("конструктор") на вкладке «Файлы», тех. требования в карточке товара.
-- Фото примеров печати: вкладка «Примеры» в галерее изображений.
-
-Заказы и Резервы:
-- Срок резерва: обычно 4 рабочих дня (на новогодние и блокирующие — меньше).
-- Статус «Если освободится»: автоматический резерв, если предыдущий истечет.
-- Перенос резерва: можно через инструмент «Переместить резерв».
-- Минимальный тираж с лого: зависит от товара и вида нанесения.
-- Срок нанесения: от 3 до 14 рабочих дней (точнее — в графике загрузки производства).
-- БПЗ: Бланк подтверждения заказа. Счёт приходит после подтверждения БПЗ.
+- Инструменты: Все условия и бонусы — в Личном кабинете на gifts.ru.
+- Акт сверки: Запросить в Личном кабинете (раздел «Услуги») или через ЭДО.
+- Срок производства: Данные загрузки обновляются каждые полчаса.
+- Доставка: Пункты выдачи указаны в разделах «Контакты» и «Доставка».
+- Новинки: Еженедельный дайджест приходит через подписку на рассылку.
+- Склад: Данные по наличию и резервам обновляются в реальном времени.
+- Образцы: Раздел «Маркетинговая поддержка» содержит образцы и каталоги.
+- Маркировка: Товары с маркировкой «Честный знак» имеют специальный значок.
+- Резерв: Ставится на 4 рабочих дня. Статус «Если освободится» — авторезерв при отмене чужого заказа.
+- Нанесение: Срок от 3 до 14 дней. Минимальный тираж зависит от вида нанесения.
 """
 
 def extract_budget(text):
     match = re.search(r"\d{3,6}", text.replace(" ", ""))
     return int(match.group()) if match else None
 
-def is_vip_query(text):
-    return any(word in text.lower() for word in ["топ", "vip", "директор", "руковод", "лукойл", "премиум"])
+def get_item_type(name):
+    name = name.lower()
+    if "набор" in name: return "Набор"
+    if "рюкзак" in name or "сумка" in name or "шопер" in name: return "Сумки"
+    if "power" in name or "заряд" in name or "колонка" in name or "лампа" in name: return "Электроника"
+    if "ежедневник" in name or "блокнот" in name: return "Офис"
+    if "ручка" in name: return "Письмо"
+    return "Другое"
 
-def build_smart_selection(budget, vip):
-    filtered = df[df["Цена_число"] <= budget].copy()
+def build_smart_selection(budget, is_vip):
+    # 1. Сначала фильтруем по бюджету
+    available = df[df["Цена_число"] <= budget].copy()
     
-    if vip:
-        # Для VIP убираем бытовуху и берем товары дороже 30% от бюджета
-        filtered = filtered[~filtered["Название"].str.contains("Чайник|Кружка|Шляпа|Джибитс|Подставк", na=False, case=False)]
-        filtered = filtered[filtered["Цена_чиflow"] >= budget * 0.3] if "Цена_чиflow" in filtered else filtered
+    if is_vip:
+        # Убираем дешевые товары и "бытовуху" для ТОП-менеджеров
+        available = available[~available["Название"].str.contains("Кружка|Чайник|Шляпа|Джибитс|Салфетка|Пакет", na=False, case=False)]
+        available = available[available["Цена_число"] >= budget * 0.2]
 
-    # Сортируем по убыванию цены
-    filtered = filtered.sort_values(by="Цена_число", ascending=False)
-
+    # 2. Сортируем: сначала самые дорогие (статусные)
+    available = available.sort_values(by="Цена_число", ascending=False)
+    
     selected = []
-    used_categories = set()
+    used_types = set()
     
-    # Пытаемся набрать 5 товаров из РАЗНЫХ категорий
-    for _, row in filtered.iterrows():
-        cat = row["Категория"]
-        if cat not in used_categories:
-            selected.append(row)
-            used_categories.add(cat)
-        if len(selected) == 5: break
+    # 3. Пытаемся взять товары РАЗНЫХ типов
+    for _, row in available.iterrows():
+        item_type = get_item_type(row["Название"])
+        
+        # Правило: только ОДИН набор в списке, чтобы не было однообразия
+        if item_type == "Набор" and "Набор" in used_types:
+            continue
             
-    # Если категорий не хватило, добираем просто по цене
+        if item_type not in used_types:
+            selected.append(row)
+            used_types.add(item_type)
+        
+        if len(selected) == 5: break
+
+    # 4. Если не набрали 5 разных типов, добираем просто по цене
     if len(selected) < 5:
-        for _, row in filtered.iterrows():
+        for _, row in available.iterrows():
             if not any(s["Артикул"] == row["Артикул"] for s in selected):
                 selected.append(row)
             if len(selected) == 5: break
@@ -105,33 +104,35 @@ def index():
 def chat():
     user_message = request.json.get("message", "")
     
-    # 1. Проверяем, не вопрос ли это по базе знаний (FAQ)
-    # Если вопрос не содержит бюджет, но содержит слова из базы знаний
+    # 1. Проверяем бюджет
     budget = extract_budget(user_message)
-    is_vip = is_vip_query(user_message)
+    is_vip = any(word in user_message.lower() for word in ["лукойл", "топ", "vip", "директор", "руковод"])
 
-    # 2. Формируем контекст для GPT
     if budget:
+        # Логика подбора товаров
         products = build_smart_selection(budget, is_vip)
-        context_data = "ПОДОБРАННЫЕ ТОВАРЫ:\n" + "\n".join([f"- {p['Название']} ({p['Цена']} руб, арт. {p['Артикул']})" for p in products])
+        if not products:
+            return jsonify({"reply": "В этом бюджете товаров не найдено. Попробуйте увеличить сумму."})
+        
+        product_list = "\n".join([f"- {p['Название']} ({p['Цена']} руб., арт. {p['Артикул']})" for p in products])
+        context = f"ПОДБОРКА ТОВАРОВ:\n{product_list}"
     else:
-        context_data = "ИНФОРМАЦИЯ О САЙТЕ И УСЛОВИЯХ:\n" + KNOWLEDGE_BASE
+        # Логика ответов на вопросы
+        context = f"БАЗА ЗНАНИЙ:\n{KNOWLEDGE_BASE}"
 
     try:
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": f"Ты консультант gifts.ru. Твоя база данных:\n{context_data}\n\nПРАВИЛА:\n1. Если есть товары, предложи их списком (название, цена, артикул).\n2. Если это вопрос про сайт (акт сверки, личный кабинет и т.д.), ответь четко по базе.\n3. Стиль деловой, без лишних приветствий. Для Лукойла/VIP не предлагай чайники и кружки."},
+                {"role": "system", "content": f"Ты эксперт gifts.ru. Твои данные:\n{context}\n\nИНСТРУКЦИЯ:\n1. Если есть товары, представь их списком из 5 позиций. Напиши ОДНУ короткую фразу в начале.\n2. Если это вопрос про сайт, ответь строго по базе знаний.\n3. Не пиши 'Здравствуйте' в каждом сообщении.\n4. Будь краток. Ссылки не давай."},
                 {"role": "user", "content": user_message}
             ],
-            max_tokens=450,
+            max_tokens=500,
             temperature=0.3
         )
-        reply = response.choices[0].message.content.strip()
-        return jsonify({"reply": reply})
-    except Exception as e:
-        print(f"Error: {e}")
-        return jsonify({"reply": "Извините, возникла техническая ошибка. Попробуйте еще раз."})
+        return jsonify({"reply": response.choices[0].message.content.strip()})
+    except:
+        return jsonify({"reply": "Произошла ошибка связи с ИИ. Попробуйте еще раз."})
 
 if __name__ == "__main__":
     app.run(port=5000)
