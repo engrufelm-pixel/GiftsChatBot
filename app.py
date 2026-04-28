@@ -16,7 +16,7 @@ client = OpenAI(
     base_url=os.getenv("OPENAI_BASE_URL")
 )
 
-# ===== Загрузка каталога =====
+# ===== ЗАГРУЗКА КАТАЛОГА =====
 df = pd.read_excel("catalog.xlsx")
 
 df = df[
@@ -33,9 +33,10 @@ df["Цена_число"] = (
 )
 
 df["Цена_число"] = pd.to_numeric(df["Цена_число"], errors="coerce")
-df = df[df["Цена_число"].notna()]
 df = df[df["Цена_число"] > 100]
 
+
+# ===== ВСПОМОГАТЕЛЬНЫЕ =====
 
 def extract_budget(text):
     match = re.search(r"\d{3,6}", text.replace(" ", ""))
@@ -65,26 +66,61 @@ def answer_faq(text):
     return None
 
 
+# ===== ОПРЕДЕЛЕНИЕ ТИПА ТОВАРА =====
+
+def detect_type(name):
+    name = name.lower()
+
+    if "набор" in name:
+        return "set"
+    if "термос" in name or "кружк" in name or "чайник" in name:
+        return "drinkware"
+    if "ежедневник" in name or "блокнот" in name:
+        return "stationery"
+    if "рюкзак" in name or "сумк" in name:
+        return "bags"
+    if "power" in name or "заряд" in name:
+        return "tech"
+    if "ручк" in name:
+        return "pen"
+    return "other"
+
+
+# ===== ПОДБОР =====
+
 def build_selection(budget, vip):
     filtered = df[df["Цена_число"] <= budget]
 
     if vip:
-        filtered = filtered[filtered["Цена_число"] >= budget * 0.5]
+        filtered = filtered[filtered["Цена_число"] >= budget * 0.4]
 
     filtered = filtered.sort_values(by="Цена_число", ascending=False)
 
     selected = []
-    used_categories = set()
+    used_types = set()
 
     for _, row in filtered.iterrows():
-        if row["Категория"] not in used_categories:
+        t = detect_type(row["Название"])
+
+        if t not in used_types:
             selected.append(row)
-            used_categories.add(row["Категория"])
+            used_types.add(t)
+
         if len(selected) == 5:
             break
 
+    # если типов меньше 5 — добираем
+    if len(selected) < 5:
+        for _, row in filtered.iterrows():
+            if row not in selected:
+                selected.append(row)
+            if len(selected) == 5:
+                break
+
     return selected
 
+
+# ===== ROUTES =====
 
 @app.route("/")
 def index():
@@ -95,7 +131,6 @@ def index():
 def chat():
     user_message = request.json.get("message")
 
-    # FAQ
     faq = answer_faq(user_message)
     if faq:
         return jsonify({"reply": faq})
@@ -111,7 +146,6 @@ def chat():
     if not products:
         return jsonify({"reply": "К сожалению, подходящих товаров не найдено."})
 
-    # ✅ GPT получает только реальные товары
     product_list = "\n".join(
         [
             f"{row['Название']} — {row['Цена']} руб. (Артикул {row['Артикул']})"
@@ -121,23 +155,18 @@ def chat():
 
     response = client.chat.completions.create(
         model="gpt-4o-mini",
-        temperature=0.1,
-        max_tokens=180,
+        temperature=0.2,
+        max_tokens=200,
         messages=[
             {
                 "role": "system",
                 "content": """
 Ты консультант gifts.ru.
-Оформи кратко и делово список товаров.
-Не добавляй новые позиции.
-Не изменяй цены.
-Не добавляй характеристик.
+Краткое деловое вступление и список из 5 товаров.
+Не придумывай позиции.
 """
             },
-            {
-                "role": "user",
-                "content": product_list
-            }
+            {"role": "user", "content": product_list}
         ]
     )
 
