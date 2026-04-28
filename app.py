@@ -1,7 +1,6 @@
 import os
 import re
 import time
-import random
 import pandas as pd
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
@@ -28,6 +27,7 @@ session_memory = {
 # ===== КАТАЛОГ =====
 df = pd.read_excel("catalog.xlsx")
 
+# Жёсткая очистка
 df = df[
     (~df["Название"].str.contains("Бренд|Размер|Свободно|На складе|В пути|Европа|Поиск|Найдено", na=False)) &
     (~df["Название"].str.contains(":", na=False)) &
@@ -78,31 +78,44 @@ def answer_faq(text):
     return None
 
 
-# ===== НОВАЯ ЛОГИКА ПОДБОРА =====
+# ===== УМНАЯ ЛОГИКА ПОДБОРА =====
 
 def build_selection(budget, status):
     filtered = df[df["Цена_число"] <= budget]
 
+    # VIP — ближе к верхней границе бюджета
     if status == "vip":
         filtered = filtered[filtered["Цена_число"] >= budget * 0.5]
 
-    # убираем уже показанные
+    # исключаем уже показанные
     filtered = filtered[~filtered["Артикул"].isin(session_memory["shown_articles"])]
 
-    # группируем по категориям
-    grouped = filtered.groupby("Категория")
+    if filtered.empty:
+        return pd.DataFrame()
 
-    selected = []
+    # сортируем по цене
+    filtered = filtered.sort_values(by="Цена_число", ascending=False)
 
-    for _, group in grouped:
-        group = group.sort_values("Цена_число", ascending=False)
-        selected.append(group.iloc[0])
+    # берём по 1 товару из разных категорий
+    unique_categories = []
+    selected_rows = []
 
-    result = pd.DataFrame(selected)
+    for _, row in filtered.iterrows():
+        if row["Категория"] not in unique_categories:
+            unique_categories.append(row["Категория"])
+            selected_rows.append(row)
+        if len(selected_rows) == 5:
+            break
 
-    result = result.sort_values("Цена_число", ascending=False)
+    # если категорий мало — добиваем просто топом
+    if len(selected_rows) < 5:
+        for _, row in filtered.iterrows():
+            if row not in selected_rows:
+                selected_rows.append(row)
+            if len(selected_rows) == 5:
+                break
 
-    return result.head(5)
+    return pd.DataFrame(selected_rows)
 
 
 # ===== ROUTES =====
@@ -121,7 +134,7 @@ def chat():
     if faq:
         return jsonify({"reply": faq})
 
-    # "ЕЩЁ" — без OpenAI
+    # "Ещё"
     if any(word in user_message.lower() for word in ["еще", "ещё", "другие"]):
         if not session_memory["budget"]:
             return jsonify({"reply": "Сначала укажите бюджет."})
@@ -172,14 +185,13 @@ def chat():
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         temperature=0.2,
-        max_tokens=300,
+        max_tokens=250,
         messages=[
             {
                 "role": "system",
                 "content": f"""
 Ты консультант gifts.ru.
-Не начинай каждый ответ с приветствия.
-Краткое деловое вступление + список товаров.
+Краткое деловое вступление + список из 5 товаров.
 Не придумывай позиции.
 
 Товары:
